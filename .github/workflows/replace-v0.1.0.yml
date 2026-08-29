@@ -1,0 +1,42 @@
+name: Replace v0.1.0 release
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/replace-v0.1.0.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replace release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v0.1.0"
+          sha="${{ github.event.before }}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release delete "$tag" --yes --cleanup-tag
+          else
+            git push origin ":refs/tags/$tag" || true
+          fi
+
+          gh release create "$tag" \
+            --target "$sha" \
+            --title "Custom Select UC Integration $tag" \
+            --notes "Initial v0.1.0 release, replaced with timeout-safe option configuration, correct backup restore runtime rebuilding, large Select WebSocket fragmentation, and Web Configurator PIN-based Core API key provisioning." \
+            --latest
+
+          gh workflow run build.yml --ref "$tag"
