@@ -89,6 +89,16 @@ class CustomSelectDevice(StatelessHTTPDevice):
             attributes[SelectAttr.CURRENT_OPTION] = self._current_option
         return attributes
 
+    async def connect(self) -> bool:
+        """Verify Core reachability and propagate the resulting availability state."""
+        connected = await super().connect()
+        if connected:
+            # Coordinator-pattern entities are intentionally skipped by the framework's
+            # CONNECTED handler. Emit UPDATE after StatelessHTTPDevice has set
+            # is_connected=True so subscribed entities run sync_state() and publish ON.
+            self.push_update()
+        return connected
+
     async def verify_connection(self) -> None:
         async with CoreAPI(self.config.remote_url, api_key=self.config.api_key) as api:
             await api.get_system_info()
