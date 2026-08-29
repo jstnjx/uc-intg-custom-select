@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from uc_intg_custom_select.api import FragmentingIntegrationAPI, WEBSOCKET_FRAGMENT_SIZE
+from uc_intg_custom_select.api import WEBSOCKET_FRAGMENT_SIZE, FragmentingIntegrationAPI
 
 
 class FakeWebSocket:
