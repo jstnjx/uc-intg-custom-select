@@ -39,10 +39,23 @@ class CustomSelectDevice(StatelessHTTPDevice):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._current_option = self.option_values[0] if self.option_values else ""
+        self._option_values = self._render_option_values()
 
-    @property
-    def option_values(self) -> list[str]:
+        # Do not duplicate the first Base64-backed option into current_option during
+        # initial state registration. With image-backed options this can add several
+        # KiB to an already large entity_states response. current_option is emitted
+        # after the user actually selects an option.
+        self._current_option = ""
+
+        rendered_bytes = sum(len(value.encode("utf-8")) for value in self._option_values)
+        _LOG.info(
+            "[%s] Prepared %d select option(s), %d rendered bytes",
+            self.log_id,
+            len(self._option_values),
+            rendered_bytes,
+        )
+
+    def _render_option_values(self) -> list[str]:
         return [
             build_option_markup(
                 option,
@@ -54,21 +67,27 @@ class CustomSelectDevice(StatelessHTTPDevice):
             for option in self.config.options
         ]
 
+    @property
+    def option_values(self) -> list[str]:
+        """Return a copy of the cached rendered option values."""
+        return list(self._option_values)
+
     def option_for_value(self, option_value: str) -> SelectOptionConfig | None:
-        values = self.option_values
         try:
-            index = values.index(option_value)
+            index = self._option_values.index(option_value)
         except ValueError:
             return None
         return self.config.options[index]
 
     def get_device_attributes(self, entity_id: str) -> dict[str, Any]:
         del entity_id
-        return {
+        attributes: dict[str, Any] = {
             SelectAttr.STATE: States.ON if self.is_connected else States.UNAVAILABLE,
-            SelectAttr.CURRENT_OPTION: self._current_option,
-            SelectAttr.OPTIONS: self.option_values,
+            SelectAttr.OPTIONS: list(self._option_values),
         }
+        if self._current_option:
+            attributes[SelectAttr.CURRENT_OPTION] = self._current_option
+        return attributes
 
     async def verify_connection(self) -> None:
         async with CoreAPI(self.config.remote_url, api_key=self.config.api_key) as api:
