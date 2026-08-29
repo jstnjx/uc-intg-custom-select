@@ -1,0 +1,10 @@
+services:
+  custom-select:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      UC_CONFIG_HOME: /config
+      UC_LOG_LEVEL: INFO
+    volumes:
+      - ./config:/config

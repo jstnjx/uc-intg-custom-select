@@ -1,0 +1,37 @@
+{
+  "driver_id": "custom-select",
+  "version": "0.1.0",
+  "min_core_api": "0.20.0",
+  "name": {
+    "en": "Custom Select"
+  },
+  "icon": "uc:list",
+  "description": {
+    "en": "Create styled Select entities with Base64 inline images that execute commands on existing Remote entities."
+  },
+  "developer": {
+    "name": "jstnjx",
+    "url": "https://github.com/jstnjx"
+  },
+  "home_page": "https://github.com/jstnjx/uc-intg-custom-select",
+  "setup_data_schema": {
+    "title": {
+      "en": "Custom Select setup"
+    },
+    "settings": [
+      {
+        "id": "info",
+        "label": {
+          "en": "Custom Select"
+        },
+        "field": {
+          "label": {
+            "value": {
+              "en": "Build image-backed custom Select entities and map each option to a command on an entity already configured on this Remote."
+            }
+          }
+        }
+      }
+    ]
+  }
+}
