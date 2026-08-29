@@ -37,24 +37,18 @@ jobs:
 
           if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
             tag_sha="$(git rev-list -n 1 "${tag}")"
-            if [[ "${tag_sha}" != "${sha}" ]]; then
-              if gh release view "${tag}" >/dev/null 2>&1; then
-                echo "${tag} is already released from ${tag_sha}; bump driver.json before publishing new code." >&2
-                exit 1
-              fi
-              echo "${tag} already exists at ${tag_sha}, expected ${sha}." >&2
-              exit 1
+            if gh release view "${tag}" >/dev/null 2>&1; then
+              echo "${tag} is already released from ${tag_sha}; nothing to publish."
+              exit 0
             fi
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "${tag}" "${sha}" -m "Custom Select UC Integration ${tag}"
-            git push origin "refs/tags/${tag}"
-          fi
 
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            echo "Release ${tag} already exists"
+            echo "${tag} already exists at ${tag_sha}; resuming its release build."
+            gh workflow run build.yml --ref "${tag}"
             exit 0
           fi
 
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${tag}" "${sha}" -m "Custom Select UC Integration ${tag}"
+          git push origin "refs/tags/${tag}"
           gh workflow run build.yml --ref "${tag}"
