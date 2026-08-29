@@ -1,0 +1,89 @@
+name: Build integration
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest pytest-asyncio ruff
+      - name: Ruff
+        run: ruff check .
+      - name: Tests
+        run: pytest
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        shell: bash
+        run: |
+          version="$(python -c 'import json; print(json.load(open("driver.json"))["version"])')"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match driver.json version v${version}" >&2
+            exit 1
+          fi
+
+      - name: Build ARM64 onedir bundle
+        shell: bash
+        run: |
+          docker run --rm \
+            --platform=linux/arm64/v8 \
+            --user=$(id -u):$(id -g) \
+            -v "$GITHUB_WORKSPACE":/workspace \
+            docker.io/unfoldedcircle/r2-pyinstaller:3.11.13-0.7.0 \
+            bash -c 'cd /workspace && python -m pip install -r requirements.txt && pyinstaller --clean --onedir --name intg-custom-select driver.py'
+
+      - name: Package custom integration
+        shell: bash
+        run: |
+          mkdir -p package/bin
+          cp -a dist/intg-custom-select/. package/bin/
+          mv package/bin/intg-custom-select package/bin/driver
+          cp driver.json LICENSE package/
+          printf '%s\n' "$VERSION" > package/version.txt
+          artifact="uc-intg-custom-select-v${VERSION}-aarch64.tar.gz"
+          tar -czf "$artifact" -C package .
+          echo "ARTIFACT=$artifact" >> "$GITHUB_ENV"
+          ls -lh "$artifact"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uc-intg-custom-select-v${{ env.VERSION }}-aarch64
+          path: ${{ env.ARTIFACT }}
+          if-no-files-found: error
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; uploading/replacing artifact"
+            gh release upload "$GITHUB_REF_NAME" "$ARTIFACT" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$ARTIFACT" \
+              --target "$GITHUB_SHA" \
+              --title "Custom Select UC Integration $GITHUB_REF_NAME" \
+              --generate-notes \
+              --latest
+          fi
