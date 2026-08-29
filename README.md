@@ -16,6 +16,11 @@ lifecycle, persistence and setup are handled by
 
 - Create multiple independent custom Select entities.
 - Configure each Select through the normal UC integration setup flow.
+- Authenticate with the Remote Web Configurator PIN and automatically create a
+  dedicated Core API key.
+- The Web Configurator PIN is used only during setup and is never persisted.
+- Existing Selects on the same Remote can reuse the stored Core API key without
+  asking for the PIN again.
 - Inline Base64 PNG, JPEG, GIF, WebP or SVG option images.
 - Configurable icon size from 16 to 192 px.
 - Qt-native inline image alignment: top, middle or bottom.
@@ -45,16 +50,42 @@ Select option string equivalent to:
 The exact StyledText string is also the Select option value, which is why the
 integration performs the command mapping internally.
 
-## Setup
+## Authentication
 
-You need a Core API key for the Remote. The key must have enough permission to
-read entities and execute entity commands.
+The user does not need to create or copy a Core API key manually.
+
+On the first connection to a Remote, setup asks for the Remote's **Web
+Configurator PIN**. Unfurled authenticates with the PIN and creates a dedicated
+Core API key with the `admin` scope. Only that generated API key is persisted in
+the integration configuration; the PIN is discarded immediately after key
+creation.
+
+The generated key receives a name such as:
+
+```text
+UC Custom Select a1b2c3
+```
+
+A random suffix prevents a repeated setup attempt from revoking a key that may
+still be used by another configured Select.
+
+When another Select is created for a Remote that already has a stored key, the
+PIN field may be left blank and the existing key is reused. Entering the PIN
+again intentionally creates a fresh dedicated key for that Select. Connecting
+to a different Remote requires that Remote's Web Configurator PIN.
+
+If a previously stored Core API key has been revoked on the Remote, run setup
+again and enter the PIN to create a new one.
+
+## Setup
 
 During setup:
 
 1. Enter the Remote address, for example `192.168.1.50` or
    `http://remote.local`.
-2. Enter the Core API key.
+2. On the first connection to that Remote, enter its Web Configurator PIN.
+   The integration automatically creates and stores a Core API key. The PIN
+   itself is not stored.
 3. Define the Select name and identifier.
 4. Choose how many options the Select should contain.
 5. Configure icon size, alignment, spacing and option-name styling.
@@ -66,7 +97,9 @@ During setup:
    - enter the command parameters as JSON.
 
 To create more Select entities, open the integration's configuration again and
-choose **Create another Select**.
+choose **Create another Select**. When the new Select targets the same Remote,
+the Web Configurator PIN can be left blank because the saved Core API key is
+reused.
 
 ## Example: Apple TV app launcher
 
@@ -176,13 +209,15 @@ python -m uc_intg_custom_select
 
 ## Security notes
 
-- The Core API key is persisted in the integration configuration.
-- Configuration backups therefore contain the API key and should be treated as
-  secrets.
+- The Web Configurator PIN is used only to authenticate the API-key creation
+  request and is never written to the integration configuration.
+- The generated Core API key is persisted in the integration configuration.
+- Configuration backups therefore contain the generated API key and should be
+  treated as secrets.
 - Base64 image data is also part of the entity attributes sent to the Remote.
 - `ucapi-framework` setup DEBUG logging is explicitly disabled by this
-  integration so API keys and pasted Base64 payloads are not dumped through
-  its raw `UserDataResponse` debug logging.
+  integration so PINs and pasted Base64 payloads are not dumped through its raw
+  `UserDataResponse` debug logging.
 
 ## License
 
