@@ -144,6 +144,7 @@ class TimeoutSafeCustomSelectSetupFlow(CustomSelectSetupFlow):
                 existing.remote_url, existing.api_key
             )
             self._option_index = len(existing.options)
+            self._option_count = len(existing.options) + 1
             self._quick_operation = "save_single_option"
             return self._build_option_screen(self._option_index)
 
@@ -154,6 +155,7 @@ class TimeoutSafeCustomSelectSetupFlow(CustomSelectSetupFlow):
             self._remote_entities = await self._load_remote_entities(
                 existing.remote_url, existing.api_key
             )
+            self._option_count = len(existing.options)
             self._quick_operation = "choose_edit_option"
             return self._build_option_choice_screen("Edit option")
 
