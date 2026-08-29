@@ -1,9 +1,13 @@
 """Persistent configuration models."""
 
+import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from ucapi_framework import BaseConfigManager
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -87,3 +91,54 @@ class CustomSelectConfigManager(BaseConfigManager[CustomSelectConfig]):
             )
         except (KeyError, TypeError, ValueError):
             return None
+
+    def restore_from_backup_json(self, backup_json: str) -> bool:
+        """Restore config and rebuild runtime devices from the restored entries.
+
+        ucapi-framework's generic restore callback adds restored configs without first
+        removing already-running device instances. BaseIntegrationDriver then reuses an
+        instance with the same identifier, which can leave an edited backup persisted on
+        disk while the Select continues serving its pre-restore options in memory.
+
+        Validate and persist the complete replacement first, then clear runtime devices
+        through the framework remove callback and add each restored config again.
+        """
+        try:
+            data = json.loads(backup_json)
+            if not isinstance(data, list):
+                _LOG.error("Invalid backup format: expected list")
+                return False
+
+            restored: list[CustomSelectConfig] = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                device = self.deserialize_device(item)
+                if device is not None:
+                    restored.append(device)
+
+            if not restored:
+                _LOG.error("No valid Custom Select entries found in backup")
+                return False
+
+            previous = self._config
+            self._config = restored
+            if not self.store():
+                self._config = previous
+                return False
+
+            if self._remove_handler is not None:
+                self._remove_handler(None)
+            if self._add_handler is not None:
+                for device in restored:
+                    self._add_handler(device)
+
+            _LOG.info(
+                "Restored %d Custom Select configuration entr%s and rebuilt runtime state",
+                len(restored),
+                "y" if len(restored) == 1 else "ies",
+            )
+            return True
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            _LOG.error("Failed to restore Custom Select backup: %s", exc)
+            return False
