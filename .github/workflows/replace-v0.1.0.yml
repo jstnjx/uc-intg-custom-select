@@ -1,4 +1,4 @@
-name: Replace v0.1.0 release
+name: Cleanup replacement helpers
 
 on:
   push:
@@ -8,35 +8,17 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
-  replace:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Replace release and tag
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Remove temporary branches
         shell: bash
         run: |
-          set -euo pipefail
-          tag="v0.1.0"
-          sha="${GITHUB_SHA}"
-
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release delete "$tag" --yes --cleanup-tag
-          else
-            git push origin ":refs/tags/$tag" || true
-          fi
-
-          gh release create "$tag" \
-            --target "$sha" \
-            --title "Custom Select UC Integration $tag" \
-            --notes "Initial v0.1.0 release, replaced to include Web Configurator PIN-based Core API key provisioning." \
-            --latest
-
-          gh workflow run build.yml --ref "$tag"
+          git push origin --delete replace-v0.1.0-temp || true
+          git push origin --delete noop-ignore || true
