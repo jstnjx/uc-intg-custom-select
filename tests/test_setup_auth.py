@@ -2,7 +2,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from unfurled.helpers.exceptions import AuthenticationError
 
 from uc_intg_custom_select import setup
