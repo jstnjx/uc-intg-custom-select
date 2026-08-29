@@ -1,7 +1,6 @@
 import base64
 
 import pytest
-
 from uc_intg_custom_select.config import LabelStyle, SelectOptionConfig
 from uc_intg_custom_select.markup import (
     build_option_markup,
