@@ -2,10 +2,12 @@
 
 import json
 import logging
+import secrets
 from typing import Any
 
 from ucapi import IntegrationSetupError, RequestUserInput, SetupError
 from ucapi_framework import BaseSetupFlow
+from unfurled import Remote
 from unfurled.api import CoreAPI
 from unfurled.helpers.exceptions import AuthenticationError, ConnectionError, HTTPError
 
@@ -22,10 +24,32 @@ from .markup import normalize_base64_image, validate_color
 from .utils import entity_display_name, normalize_remote_url, slugify
 
 _LOG = logging.getLogger(__name__)
+_API_KEY_NAME_PREFIX = "UC Custom Select"
 
 
 def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def create_core_api_key_from_pin(remote_url: str, pin: str) -> str:
+    """Exchange a Web Configurator PIN for a dedicated Core API key.
+
+    The PIN is used only for this request and is never returned to the caller or
+    persisted by the integration. A short random suffix keeps key names distinct
+    when setup is repeated without revoking keys that may still be in use by
+    another configured Select.
+    """
+    pin = pin.strip()
+    if not pin:
+        raise AuthenticationError("Web Configurator PIN is required")
+
+    key_name = f"{_API_KEY_NAME_PREFIX} {secrets.token_hex(3)}"
+    async with Remote(remote_url, pin=pin, wake_if_asleep=False) as remote:
+        api_key = await remote.auth.create_key(key_name)
+
+    if not api_key:
+        raise AuthenticationError("Remote returned an empty Core API key")
+    return api_key
 
 
 class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
@@ -39,10 +63,17 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
 
     def get_manual_entry_form(self) -> RequestUserInput:
         existing = self.selected_config_entry
-        # When adding another Select, reuse the first configured Remote credentials
-        # as defaults. They can still be changed, so one integration instance can
-        # target multiple Remotes if desired without making the common case tedious.
         defaults = existing or next(iter(self.config.all()), None)
+        has_saved_credentials = defaults is not None
+
+        pin_help = (
+            "Leave the PIN blank to reuse the Core API key already stored for this "
+            "Remote. Enter the PIN to create a fresh dedicated API key. The PIN is "
+            "used once and is never stored."
+            if has_saved_credentials
+            else "Enter the Remote Web Configurator PIN. It is used once to create a "
+            "dedicated Core API key and is never stored."
+        )
 
         return RequestUserInput(
             {"en": "Create Custom Select" if existing is None else "Edit Custom Select"},
@@ -54,9 +85,9 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                         "label": {
                             "value": {
                                 "en": (
-                                    "Connect to this Remote's Core API, define the Select, "
-                                    "then configure each option and the existing entity command "
-                                    "it should execute."
+                                    "Connect to this Remote, create or reuse a Core API key, "
+                                    "define the Select, then configure each option and the "
+                                    "existing entity command it should execute."
                                 )
                             }
                         }
@@ -72,13 +103,14 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                     },
                 },
                 {
-                    "id": "api_key",
-                    "label": {"en": "Remote Core API key"},
-                    "field": {
-                        "password": {
-                            "value": defaults.api_key if defaults else ""
-                        }
-                    },
+                    "id": "pin_help",
+                    "label": {"en": "Web Configurator authentication"},
+                    "field": {"label": {"value": {"en": pin_help}}},
+                },
+                {
+                    "id": "web_configurator_pin",
+                    "label": {"en": "Remote Web Configurator PIN"},
+                    "field": {"password": {"value": ""}},
                 },
                 {
                     "id": "name",
@@ -114,9 +146,7 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                     },
                     "field": {
                         "number": {
-                            "value": existing.icon_size
-                            if existing
-                            else DEFAULT_ICON_SIZE
+                            "value": existing.icon_size if existing else DEFAULT_ICON_SIZE
                         }
                     },
                 },
@@ -125,9 +155,7 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                     "label": {"en": "Inline image alignment"},
                     "field": {
                         "dropdown": {
-                            "value": existing.image_alignment
-                            if existing
-                            else "middle",
+                            "value": existing.image_alignment if existing else "middle",
                             "items": [
                                 {"id": "top", "label": {"en": "Top"}},
                                 {"id": "middle", "label": {"en": "Middle"}},
@@ -168,9 +196,7 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                     "label": {"en": "Option names underlined"},
                     "field": {
                         "checkbox": {
-                            "value": existing.label_style.underline
-                            if existing
-                            else False
+                            "value": existing.label_style.underline if existing else False
                         }
                     },
                 },
@@ -200,12 +226,12 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
     ) -> CustomSelectConfig | SetupError | RequestUserInput:
         try:
             remote_url = normalize_remote_url(str(input_values.get("remote_url", "")))
-            api_key = str(input_values.get("api_key", "")).strip()
+            pin = str(input_values.get("web_configurator_pin", "")).strip()
             name = str(input_values.get("name", "")).strip()
             identifier = str(input_values.get("identifier", "")).strip()
             identifier = slugify(identifier or name)
 
-            if not api_key or not name:
+            if not name:
                 return SetupError(error_type=IntegrationSetupError.OTHER)
 
             option_count = int(input_values.get("option_count", 0))
@@ -228,16 +254,12 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
             if image_alignment not in {"top", "middle", "bottom"}:
                 return SetupError(error_type=IntegrationSetupError.OTHER)
 
-            if (
-                self.selected_config_entry is None
-                and self.config.contains(identifier)
-            ):
+            if self.selected_config_entry is None and self.config.contains(identifier):
                 _LOG.warning("Select identifier already exists: %s", identifier)
                 return SetupError(error_type=IntegrationSetupError.OTHER)
 
-            self._remote_entities = await self._load_remote_entities(
-                remote_url, api_key
-            )
+            api_key = await self._resolve_api_key(remote_url, pin)
+            self._remote_entities = await self._load_remote_entities(remote_url, api_key)
 
             existing = self.selected_config_entry
             old_options = list(existing.options) if existing else []
@@ -270,6 +292,23 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
         except (HTTPError, ValueError, TypeError) as exc:
             _LOG.warning("Custom Select setup validation failed: %s", exc)
             return SetupError(error_type=IntegrationSetupError.OTHER)
+
+    async def _resolve_api_key(self, remote_url: str, pin: str) -> str:
+        """Create a key from a PIN or reuse one already stored for this Remote."""
+        if pin:
+            return await create_core_api_key_from_pin(remote_url, pin)
+
+        existing = self.selected_config_entry
+        if existing and existing.remote_url == remote_url and existing.api_key:
+            return existing.api_key
+
+        for configured in self.config.all():
+            if configured.remote_url == remote_url and configured.api_key:
+                return configured.api_key
+
+        raise AuthenticationError(
+            "Web Configurator PIN is required to create the initial Core API key"
+        )
 
     async def _load_remote_entities(
         self, remote_url: str, api_key: str
@@ -325,9 +364,7 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                 {"id": "", "label": {"en": "No entities returned by Remote"}}
             )
 
-        default_entity = (
-            existing.target_entity_id if existing else entity_items[0]["id"]
-        )
+        default_entity = existing.target_entity_id if existing else entity_items[0]["id"]
         params_value = (
             json.dumps(existing.params, ensure_ascii=False, separators=(",", ":"))
             if existing
@@ -351,9 +388,9 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                         "label": {
                             "value": {
                                 "en": (
-                                    "The displayed option value is Qt StyledText: "
-                                    "a Base64 inline image plus the styled option name. "
-                                    "Selecting it executes the mapped Core entity command."
+                                    "The displayed option value is Qt StyledText: a Base64 "
+                                    "inline image plus the styled option name. Selecting it "
+                                    "executes the mapped Core entity command."
                                 )
                             }
                         }
@@ -362,9 +399,7 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                 {
                     "id": "option_label",
                     "label": {"en": "Option name"},
-                    "field": {
-                        "text": {"value": existing.label if existing else ""}
-                    },
+                    "field": {"text": {"value": existing.label if existing else ""}},
                 },
                 {
                     "id": "image_help",
@@ -394,9 +429,7 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                             "activity.on, remote.send_cmd)"
                         )
                     },
-                    "field": {
-                        "text": {"value": existing.command_id if existing else ""}
-                    },
+                    "field": {"text": {"value": existing.command_id if existing else ""}},
                 },
                 {
                     "id": "command_params",
@@ -466,11 +499,10 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
             return SetupError(error_type=IntegrationSetupError.OTHER)
 
     async def _build_configuration_mode_screen(self) -> RequestUserInput:
-        configured = []
-        for item in self.config.all():
-            configured.append(
-                {"id": item.identifier, "label": {"en": item.name}}
-            )
+        configured = [
+            {"id": item.identifier, "label": {"en": item.name}}
+            for item in self.config.all()
+        ]
 
         if not configured:
             configured = [{"id": "", "label": {"en": "---"}}]
@@ -487,9 +519,7 @@ class CustomSelectSetupFlow(BaseSetupFlow[CustomSelectConfig]):
                 ]
             )
         else:
-            actions.append(
-                {"id": "restore", "label": {"en": "Restore configuration"}}
-            )
+            actions.append({"id": "restore", "label": {"en": "Restore configuration"}})
 
         return RequestUserInput(
             {"en": "Custom Select configuration"},
