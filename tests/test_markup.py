@@ -1,13 +1,13 @@
 import base64
 
 import pytest
+
 from uc_intg_custom_select.config import LabelStyle, SelectOptionConfig
 from uc_intg_custom_select.markup import (
     build_option_markup,
     normalize_base64_image,
     style_label,
 )
-
 
 PNG_1X1 = base64.b64encode(
     b"\x89PNG\r\n\x1a\n" + b"test-payload"
