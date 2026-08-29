@@ -19,9 +19,9 @@ async def main() -> None:
     logging.basicConfig(level=getattr(logging, level, logging.INFO))
     logging.getLogger(LOGGER_NAME).setLevel(level)
 
-    # BaseSetupFlow logs raw UserDataResponse objects at DEBUG. This integration's
-    # setup payload includes API keys and Base64 images, so never enable framework
-    # setup DEBUG logging.
+    # BaseSetupFlow logs raw UserDataResponse objects at DEBUG. Setup payloads can
+    # contain the Web Configurator PIN and large Base64 images, so never enable
+    # framework setup DEBUG logging. The PIN itself is never persisted.
     logging.getLogger("ucapi_framework.setup").setLevel(logging.INFO)
 
     driver = BaseIntegrationDriver(
