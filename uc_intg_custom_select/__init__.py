@@ -4,11 +4,12 @@ import asyncio
 import logging
 import os
 
-from ucapi_framework import BaseIntegrationDriver, get_config_path
+from ucapi_framework import get_config_path
 
 from .config import CustomSelectConfig, CustomSelectConfigManager
 from .const import DRIVER_ID, LOGGER_NAME
 from .device import CustomSelectDevice
+from .driver import CustomSelectDriver
 from .select_entity import CustomSelectEntity
 from .setup import CustomSelectSetupFlow
 
@@ -24,7 +25,7 @@ async def main() -> None:
     # framework setup DEBUG logging. The PIN itself is never persisted.
     logging.getLogger("ucapi_framework.setup").setLevel(logging.INFO)
 
-    driver = BaseIntegrationDriver(
+    driver = CustomSelectDriver(
         device_class=CustomSelectDevice,
         entity_classes=[CustomSelectEntity],
         driver_id=DRIVER_ID,
