@@ -4,7 +4,17 @@ from unittest.mock import Mock
 from uc_intg_custom_select.config import CustomSelectConfigManager
 
 
-def _config_payload(label="Netflix"):
+def _config_payload(label="Netflix", icon=""):
+    option = {
+        "label": label,
+        "image_base64": "data:image/png;base64,AAAA",
+        "target_entity_id": "hass.main.media_player.tv",
+        "command_id": "media_player.select_source",
+        "params": {"source": label},
+    }
+    if icon:
+        option["icon"] = icon
+
     return {
         "identifier": "apps",
         "name": "Apps",
@@ -20,15 +30,7 @@ def _config_payload(label="Netflix"):
             "color": "#ffffff",
             "size": 0,
         },
-        "options": [
-            {
-                "label": label,
-                "image_base64": "data:image/png;base64,AAAA",
-                "target_entity_id": "hass.main.media_player.tv",
-                "command_id": "media_player.select_source",
-                "params": {"source": label},
-            }
-        ],
+        "options": [option],
     }
 
 
@@ -39,7 +41,17 @@ def test_nested_config_deserialization(tmp_path):
     assert config is not None
     assert config.label_style.bold is True
     assert config.options[0].label == "Netflix"
+    assert config.options[0].icon == ""
     assert config.options[0].params == {"source": "Netflix"}
+
+
+def test_native_icon_reference_deserialization(tmp_path):
+    manager = CustomSelectConfigManager(str(tmp_path))
+    config = manager.deserialize_device(_config_payload(icon="uc:house"))
+
+    assert config is not None
+    assert config.options[0].icon == "uc:house"
+    assert config.options[0].image_base64 == "data:image/png;base64,AAAA"
 
 
 def test_restore_rebuilds_runtime_after_persisting_replacement(tmp_path):
