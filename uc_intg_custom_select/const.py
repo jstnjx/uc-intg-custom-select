@@ -1,7 +1,7 @@
 """Constants for the Custom Select integration."""
 
 DRIVER_ID = "custom-select"
-VERSION = "0.1.0"
+VERSION = "0.1.2"
 
 DEFAULT_ICON_SIZE = 96
 MIN_ICON_SIZE = 16

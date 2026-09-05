@@ -1,13 +1,13 @@
 {
   "driver_id": "custom-select",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "min_core_api": "0.20.0",
   "name": {
     "en": "Custom Select"
   },
   "icon": "uc:list",
   "description": {
-    "en": "Create styled Select entities with Base64 inline images that execute commands on existing Remote entities."
+    "en": "Create styled Select entities with UC, uploaded resource, or Base64 icons that execute commands on existing Remote entities."
   },
   "developer": {
     "name": "jstnjx",
