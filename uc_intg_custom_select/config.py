@@ -29,6 +29,7 @@ class SelectOptionConfig:
     image_base64: str
     target_entity_id: str
     command_id: str
+    icon: str = ""
     params: dict[str, Any] = field(default_factory=dict)
 
 
@@ -74,6 +75,7 @@ class CustomSelectConfigManager(BaseConfigManager[CustomSelectConfig]):
                         image_base64=str(item.get("image_base64", "")),
                         target_entity_id=str(item.get("target_entity_id", "")),
                         command_id=str(item.get("command_id", "")),
+                        icon=str(item.get("icon", "")),
                         params=params,
                     )
                 )

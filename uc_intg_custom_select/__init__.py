@@ -11,7 +11,7 @@ from .const import DRIVER_ID, LOGGER_NAME
 from .device import CustomSelectDevice
 from .driver import CustomSelectDriver
 from .select_entity import CustomSelectEntity
-from .setup_fast import TimeoutSafeCustomSelectSetupFlow
+from .setup_icons import IconAwareCustomSelectSetupFlow
 
 
 async def main() -> None:
@@ -40,7 +40,7 @@ async def main() -> None:
 
     await driver.register_all_device_instances(connect=False)
 
-    setup_handler = TimeoutSafeCustomSelectSetupFlow.create_handler(driver=driver)
+    setup_handler = IconAwareCustomSelectSetupFlow.create_handler(driver=driver)
     await driver.api.init("driver.json", setup_handler)
 
     await asyncio.Future()

@@ -9,6 +9,7 @@ from ucapi_framework import StatelessHTTPDevice
 from unfurled.api import CoreAPI
 
 from .config import CustomSelectConfig, SelectOptionConfig
+from .icons import get_uc_icon_mapping, option_icon_source, resolve_icon_reference
 from .markup import build_option_markup
 
 _LOG = logging.getLogger(__name__)
@@ -41,10 +42,10 @@ class CustomSelectDevice(StatelessHTTPDevice):
         super().__init__(*args, **kwargs)
         self._option_values = self._render_option_values()
 
-        # Do not duplicate the first Base64-backed option into current_option during
-        # initial state registration. With image-backed options this can add several
-        # KiB to an already large entity_states response. current_option is emitted
-        # after the user actually selects an option.
+        # Do not duplicate the first image-backed option into current_option during
+        # initial state registration. With inline images this can add several KiB to
+        # an already large entity_states response. current_option is emitted after
+        # the user actually selects an option.
         self._current_option = ""
 
         rendered_bytes = sum(len(value.encode("utf-8")) for value in self._option_values)
@@ -89,10 +90,62 @@ class CustomSelectDevice(StatelessHTTPDevice):
             attributes[SelectAttr.CURRENT_OPTION] = self._current_option
         return attributes
 
+    async def _refresh_icon_cache(self) -> None:
+        """Refresh native/resource references while retaining known-good caches."""
+        referenced = [option for option in self.config.options if option.icon.strip()]
+        if not referenced:
+            return
+
+        previous_values = list(self._option_values)
+        current_index: int | None = None
+        if self._current_option:
+            try:
+                current_index = previous_values.index(self._current_option)
+            except ValueError:
+                current_index = None
+
+        uc_mapping: dict[str, Any] | None = None
+        changed = False
+        async with CoreAPI(self.config.remote_url, api_key=self.config.api_key) as api:
+            for option in referenced:
+                try:
+                    if option_icon_source(option.icon, "") == "uc" and uc_mapping is None:
+                        uc_mapping = await get_uc_icon_mapping(api)
+                    image = await resolve_icon_reference(
+                        api,
+                        option.icon,
+                        uc_mapping=uc_mapping,
+                    )
+                    if image != option.image_base64:
+                        option.image_base64 = image
+                        changed = True
+                except Exception as exc:  # noqa: BLE001 - keep known-good cached image
+                    _LOG.warning(
+                        "[%s] Could not refresh icon %s for option %s: %s",
+                        self.log_id,
+                        option.icon,
+                        option.label,
+                        exc,
+                    )
+
+        if not changed:
+            return
+
+        self._option_values = self._render_option_values()
+        if current_index is not None and current_index < len(self._option_values):
+            self._current_option = self._option_values[current_index]
+
+        _LOG.info(
+            "[%s] Refreshed native/resource icon cache for %d option(s)",
+            self.log_id,
+            len(referenced),
+        )
+
     async def connect(self) -> bool:
-        """Verify Core reachability and propagate the resulting availability state."""
+        """Verify Core reachability, refresh icons and propagate availability state."""
         connected = await super().connect()
         if connected:
+            await self._refresh_icon_cache()
             # Coordinator-pattern entities are intentionally skipped by the framework's
             # CONNECTED handler. Emit UPDATE after StatelessHTTPDevice has set
             # is_connected=True so subscribed entities run sync_state() and publish ON.

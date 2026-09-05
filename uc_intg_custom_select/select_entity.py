@@ -1,4 +1,4 @@
-"""UC Select entity exposing Base64-backed styled options."""
+"""UC Select entity exposing styled icon-backed options."""
 
 import logging
 from typing import Any
@@ -29,7 +29,7 @@ class CustomSelectEntity(Select, Entity):
             identifier=entity_id,
             name=device_config.name,
             icon="uc:list",
-            description="Styled custom select with inline Base64 option images",
+            description="Styled custom select with UC, resource or Base64 option icons",
             attributes=device.get_device_attributes(entity_id),
             cmd_handler=self.handle_command,
         )
