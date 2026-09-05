@@ -155,6 +155,45 @@ class IconAwareCustomSelectSetupFlow(TimeoutSafeCustomSelectSetupFlow):
         form.settings[:] = rebuilt
         return form
 
+    def _build_option_retry_screen(
+        self,
+        error: str,
+        values: dict[str, Any],
+    ) -> RequestUserInput:
+        """Reopen the option editor after validation without aborting setup."""
+        form = self._build_option_screen(self._option_index)
+        form.settings.insert(
+            0,
+            {
+                "id": "option_error",
+                "label": {"en": "Could not save option"},
+                "field": {
+                    "label": {
+                        "value": {
+                            "en": error,
+                        }
+                    }
+                },
+            },
+        )
+
+        # Preserve the submitted values so a single validation error does not force
+        # the user to re-enter the complete option. Label-only settings are ignored.
+        for setting in form.settings:
+            setting_id = str(setting.get("id", ""))
+            if setting_id not in values:
+                continue
+            field = setting.get("field")
+            if not isinstance(field, dict):
+                continue
+            for field_type in ("text", "dropdown", "number", "checkbox", "password"):
+                field_config = field.get(field_type)
+                if isinstance(field_config, dict) and "value" in field_config:
+                    field_config["value"] = values[setting_id]
+                    break
+
+        return form
+
     async def _resolve_selected_icon(
         self,
         values: dict[str, Any],
@@ -249,19 +288,33 @@ class IconAwareCustomSelectSetupFlow(TimeoutSafeCustomSelectSetupFlow):
             source, icon_ref, image_value = await self._resolve_selected_icon(
                 values, existing
             )
-            values["image_base64"] = image_value
-        except Exception as exc:  # noqa: BLE001 - converted to setup validation error
+        except Exception as exc:  # noqa: BLE001 - shown as an in-flow validation error
             _LOG.warning("Invalid option icon configuration: %s", exc)
-            return SetupError(error_type=IntegrationSetupError.OTHER)
+            return self._build_option_retry_screen(
+                f"Icon validation failed: {exc}",
+                values,
+            )
+
+        # Only user-supplied Base64 should go through the legacy Base64 input path.
+        # UC and Remote resource icons have already been resolved and validated by the
+        # icon resolver. Passing those generated data URIs through the old option saver
+        # needlessly couples native/resource icons to legacy input validation.
+        values["image_base64"] = image_value if source == "base64" else ""
 
         result = await super().handle_additional_configuration_response(msg)
         if isinstance(result, SetupError):
-            return result
+            return self._build_option_retry_screen(
+                "Option validation failed. Check the option name, target entity, "
+                "command ID, command parameters and selected icon source.",
+                values,
+            )
 
         if saved_index < len(self._pending_device_config.options):
             saved = self._pending_device_config.options[saved_index]
             saved.icon = icon_ref
-            if source == "none":
+            if source in {"uc", "resource"}:
+                saved.image_base64 = image_value
+            elif source == "none":
                 saved.image_base64 = ""
 
         return result
