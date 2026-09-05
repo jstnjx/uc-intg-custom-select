@@ -60,9 +60,7 @@ def _mapping_codepoint(value: Any) -> int:
     lowered = text.lower()
     if lowered.startswith("&#x") and lowered.endswith(";"):
         text = text[3:-1]
-    elif lowered.startswith("\\u"):
-        text = text[2:]
-    elif lowered.startswith("0x"):
+    elif lowered.startswith("\\u") or lowered.startswith("0x"):
         text = text[2:]
     elif lowered.startswith("u") and len(text) > 1:
         text = text[1:]
@@ -152,6 +150,7 @@ async def resolve_icon_reference(
         payload = await api.request(
             "GET",
             f"resources/Icon/{quote(resource_id, safe='')}",
+            headers={"Accept": "*/*"},
             response_type="bytes",
         )
         if not isinstance(payload, (bytes, bytearray)) or not payload:
