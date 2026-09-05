@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
 from urllib.parse import quote
 
 from ucapi import IntegrationSetupError, SetupComplete, SetupError
@@ -40,7 +39,10 @@ class CoreCleanupCustomSelectSetupFlow(IconAwareCustomSelectSetupFlow):
             return SetupError(error_type=IntegrationSetupError.OTHER)
 
         if not self.config.remove(choice):
-            _LOG.error("Core entity was deleted but local Select config %s could not be removed", choice)
+            _LOG.error(
+                "Core entity was deleted but local Select config %s could not be removed",
+                choice,
+            )
             return SetupError(error_type=IntegrationSetupError.OTHER)
 
         self._quick_operation = ""
